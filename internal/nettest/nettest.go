@@ -117,3 +117,24 @@ func (n *NS) RequireType(kind string) {
 		n.t.Skipf("kernel has no %s device support here", kind)
 	}
 }
+
+// Attrs returns just the driver attribute line for a device: the line
+// beginning "vxlan ...", "gre ...", and so on.
+//
+// Assertions belong here rather than against the whole of
+// "ip -details link show", where unrelated netdev fields collide with
+// tunnel ones. Every device reports "group default" for its link group,
+// which has nothing to do with a VXLAN multicast group.
+func (n *NS) Attrs(dev, kind string) (string, error) {
+	out, err := n.Show(dev)
+	if err != nil {
+		return "", fmt.Errorf("%v\n%s", err, out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, kind+" ") {
+			return line, nil
+		}
+	}
+	return "", fmt.Errorf("no %s attribute line for %s in:\n%s", kind, dev, out)
+}

@@ -60,7 +60,7 @@ func TestAgainstKernel(t *testing.T) {
 			src:  `(configure (ipv4 :src "192.168.1.10" :dst "192.168.1.20" (gre (ipv4 :src "10.20.0.1/30"))))`,
 			dev:  "gre1",
 			expect: []string{
-				"gre remote 192.168.1.20 local 192.168.1.10",
+				"remote 192.168.1.20", "local 192.168.1.10",
 			},
 		},
 		{
@@ -69,7 +69,7 @@ func TestAgainstKernel(t *testing.T) {
 			src:  `(configure (ipv4 :src "192.168.1.10" :dst "192.168.1.20" (gre :key 500 (ethernet (ipv4 :src "10.50.0.1/24")))))`,
 			dev:  "gretap1",
 			expect: []string{
-				"gretap remote 192.168.1.20 local 192.168.1.10",
+				"remote 192.168.1.20", "local 192.168.1.10",
 				"key 500",
 			},
 		},
@@ -79,7 +79,7 @@ func TestAgainstKernel(t *testing.T) {
 			src:  `(configure (ipv4 :src "192.168.1.10" :dst "192.168.1.20" (ipv4 :src "10.30.0.1/30" (tcp :dst-port 22))))`,
 			dev:  "ipip1",
 			expect: []string{
-				"ipip remote 192.168.1.20 local 192.168.1.10",
+				"remote 192.168.1.20", "local 192.168.1.10",
 			},
 		},
 	}
@@ -92,15 +92,18 @@ func TestAgainstKernel(t *testing.T) {
 			if err := ns.RunScript(script(t, tt.src)); err != nil {
 				t.Fatalf("generated script failed against the kernel:\n%v", err)
 			}
-			out, err := ns.Show(tt.dev)
+			attrs, err := ns.Attrs(tt.dev, tt.kind)
 			if err != nil {
-				t.Fatalf("device %s was not created: %v\n%s", tt.dev, err, out)
+				t.Fatalf("device %s was not created as expected: %v", tt.dev, err)
 			}
 			for _, want := range tt.expect {
-				if !strings.Contains(out, want) {
-					t.Errorf("device is missing %q\n--- ip -details link show %s ---\n%s",
-						want, tt.dev, out)
+				if !strings.Contains(attrs, want) {
+					t.Errorf("device is missing %q\n  %s", want, attrs)
 				}
+			}
+			out, err := ns.Show(tt.dev)
+			if err != nil {
+				t.Fatal(err)
 			}
 			if !strings.Contains(out, "UP") {
 				t.Errorf("%s was created but is not up:\n%s", tt.dev, out)
