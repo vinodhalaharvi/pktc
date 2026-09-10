@@ -10,6 +10,10 @@ import (
 	"strings"
 )
 
+// DefaultKeyDir is where WireGuard key material is looked for unless
+// the deployment says otherwise.
+const DefaultKeyDir = "/etc/wireguard"
+
 // MaxIfName is the Linux interface name limit, including the
 // terminating NUL: names must be 15 characters or fewer.
 const MaxIfName = 15
@@ -24,6 +28,11 @@ type Env struct {
 	// tunnel inside a tunnel finds its underlay.
 	Dev string
 
+	// KeyDir is where a generated script looks for key material. Like
+	// the underlay device and the prefix length, this is a fact about
+	// the machine rather than about the packet.
+	KeyDir string
+
 	// Created lists every device made so far, outermost first. A
 	// chained stack has more than one, and all of them need bringing
 	// up, not just the innermost.
@@ -36,10 +45,11 @@ type Env struct {
 // New builds an Env rooted at a physical device.
 func New(root string) *Env {
 	return &Env{
-		Root:  root,
-		Dev:   root,
-		used:  map[string]bool{root: true},
-		count: map[string]int{},
+		Root:   root,
+		Dev:    root,
+		KeyDir: DefaultKeyDir,
+		used:   map[string]bool{root: true},
+		count:  map[string]int{},
 	}
 }
 

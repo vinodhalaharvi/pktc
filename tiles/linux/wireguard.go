@@ -12,14 +12,11 @@ import (
 	"github.com/vinodhalaharvi/pktc/tile"
 )
 
-// KeyDir is where the emitted script looks for key material.
+// WireGuard recognises IP carried inside WireGuard over UDP.
 //
 // Keys are not packet structure and must never appear in a tree: a
 // packet description is something people paste into issues. The tree
-// names a peer; the name resolves to a file on the machine.
-const KeyDir = "/etc/wireguard"
-
-// WireGuard recognises IP carried inside WireGuard over UDP.
+// names a peer; the name resolves to a file under Env.KeyDir.
 //
 // Every other tile so far has been symmetric: the far end is the near
 // end with its endpoints exchanged. This one is not, and it is the
@@ -93,11 +90,11 @@ func lowerWireGuard(sp spine.Spine, e *env.Env) (command.Script, error) {
 			"ip", "link", "add", "name", dev, "type", "wireguard"),
 		command.New("key material is machine state, not packet structure",
 			"wg", "set", dev, "listen-port", u16(port),
-			"private-key", fmt.Sprintf("%s/%s.key", KeyDir, dev)),
+			"private-key", fmt.Sprintf("%s/%s.key", e.KeyDir, dev)),
 	}
 
 	argv := []string{"wg", "set", dev, "peer",
-		fmt.Sprintf("$(cat %s/%s.pub)", KeyDir, peerName)}
+		fmt.Sprintf("$(cat %s/%s.pub)", e.KeyDir, peerName)}
 	if endpoint.Dynamic || endpoint.Absent {
 		// A peer behind NAT cannot be addressed; it announces itself on
 		// first handshake. WireGuard is the only tile here that can do

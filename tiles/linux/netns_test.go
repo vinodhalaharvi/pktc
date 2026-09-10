@@ -11,6 +11,8 @@
 package linux
 
 import (
+	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -20,6 +22,33 @@ import (
 	"github.com/vinodhalaharvi/pktc/sexp"
 	"github.com/vinodhalaharvi/pktc/spine"
 )
+
+func scriptWithKeys(t *testing.T, src, keyDir string) string {
+	t.Helper()
+	forms, err := sexp.Read("t.lisp", src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := ast.Build(forms[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp, err := spine.FromForm(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := Registry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := env.New("veth0")
+	e.KeyDir = keyDir
+	res, err := reg.Cover(sp, e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res.Script.Plain()
+}
 
 func script(t *testing.T, src string) string {
 	t.Helper()
@@ -46,13 +75,27 @@ func script(t *testing.T, src string) string {
 	return res.Script.Plain()
 }
 
+// containsAny reports whether s contains any of the "|"-separated
+// alternatives in want.
+func containsAny(s, want string) bool {
+	for _, alt := range strings.Split(want, "|") {
+		if strings.Contains(s, alt) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestAgainstKernel(t *testing.T) {
 	tests := []struct {
-		name   string
-		kind   string // kernel device type this needs
-		src    string
-		dev    string
-		expect []string // substrings of the kernel's own description
+		name string
+		kind string // kernel device type this needs
+		src  string
+		dev  string
+		// Substrings of the kernel's own description. An entry may
+		// offer alternatives separated by "|", because iproute2 does
+		// not always render a value the way it accepts it.
+		expect []string
 	}{
 		{
 			name: "gre",
@@ -70,7 +113,9 @@ func TestAgainstKernel(t *testing.T) {
 			dev:  "gretap1",
 			expect: []string{
 				"remote 192.168.1.20", "local 192.168.1.10",
-				"key 500",
+				// iproute2 accepts a decimal GRE key and prints it in
+				// dotted-quad: 500 comes back as 0.0.1.244.
+				"key 500|key 0.0.1.244|ikey 0.0.1.244",
 			},
 		},
 		{
@@ -97,7 +142,7 @@ func TestAgainstKernel(t *testing.T) {
 				t.Fatalf("device %s was not created as expected: %v", tt.dev, err)
 			}
 			for _, want := range tt.expect {
-				if !strings.Contains(attrs, want) {
+				if !containsAny(attrs, want) {
 					t.Errorf("device is missing %q\n  %s", want, attrs)
 				}
 			}
@@ -196,18 +241,17 @@ func TestNewTilesAgainstKernel(t *testing.T) {
 			ns := nettest.New(t, tt.name, "192.168.1.10")
 			ns.RequireType(tt.kind)
 
-			s := strings.ReplaceAll(script(t, tt.src), "dev eth0", "dev veth0")
-			s = strings.ReplaceAll(s, "link eth0 name eth0.", "link veth0 name veth0.")
+			keyDir := t.TempDir()
+			s := scriptWithKeys(t, tt.src, keyDir)
 			if tt.name == "wireguard" {
-				// Key material is machine state; make some so the
-				// generated script has something real to read.
-				ns.MustRun("sh", "-c",
-					"mkdir -p /etc/wireguard && "+
-						"(wg genkey > /etc/wireguard/wg1.key 2>/dev/null || echo skip) && "+
-						"(wg genkey | wg pubkey > /etc/wireguard/peer-b.pub 2>/dev/null || echo skip)")
-				if _, err := ns.Run("sh", "-c", "test -s /etc/wireguard/wg1.key"); err != nil {
-					t.Skip("wireguard tools are not installed")
+				if _, err := exec.LookPath("wg"); err != nil {
+					t.Skip("wireguard-tools is not installed")
 				}
+				// Key material is machine state. Make some the test
+				// owns, rather than writing into a shared /etc.
+				ns.MustRun("sh", "-c", fmt.Sprintf(
+					"wg genkey > %s/wg1.key && wg genkey | wg pubkey > %s/peer-b.pub",
+					keyDir, keyDir))
 			}
 			if err := ns.RunScript(s); err != nil {
 				t.Fatalf("generated script failed against the kernel:\n%v", err)
@@ -223,7 +267,7 @@ func TestNewTilesAgainstKernel(t *testing.T) {
 				t.Fatalf("device %s was not created as expected: %v", tt.dev, err)
 			}
 			for _, want := range tt.expect {
-				if !strings.Contains(attrs, want) {
+				if !containsAny(attrs, want) {
 					t.Errorf("device is missing %q\n  %s", want, attrs)
 				}
 			}

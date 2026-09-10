@@ -36,5 +36,17 @@ jobs:
       - name: load tunnel modules
         run: sudo modprobe ip_gre ipip vxlan 8021q wireguard || true
 
+      - name: which tunnel types this kernel offers
+        run: |
+          for k in gre gretap ipip vxlan vlan wireguard; do
+            sudo ip link add name probe0 type $k 2>&1 | head -1 | sed "s/^/$k: /" || true
+            sudo ip link del probe0 2>/dev/null || true
+          done
+        continue-on-error: true
+
       - name: kernel tests
-        run: sudo -E $(which go) test -tags netns -v ./...
+        run: sudo -E $(which go) test -tags netns ./... 2>&1 | tee /tmp/netns.log
+
+      - name: failing tests
+        if: failure()
+        run: grep -E '^\s*--- FAIL|FAIL' /tmp/netns.log || true

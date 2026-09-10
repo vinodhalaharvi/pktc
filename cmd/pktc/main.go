@@ -34,6 +34,7 @@ usage:
 lower flags:
   -underlay <dev>   physical device the outermost tunnel attaches to (default eth0)
   -quiet            omit explanatory comments
+  -key-dir <dir>    where a script looks for key material (default /etc/wireguard)
 
 mirror flags:
   -underlay <dev>       underlay on the near end (default eth0)
@@ -227,6 +228,7 @@ func cmdLower(args []string) error {
 	fs := flag.NewFlagSet("lower", flag.ExitOnError)
 	underlay := fs.String("underlay", "eth0", "physical device the outermost tunnel attaches to")
 	quiet := fs.Bool("quiet", false, "omit explanatory comments")
+	keyDir := fs.String("key-dir", env.DefaultKeyDir, "where a script looks for key material")
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -242,6 +244,7 @@ func cmdLower(args []string) error {
 	// One Env for the whole file: the rules are configured on one
 	// machine, so a device name claimed by one is unavailable to the next.
 	e := env.New(*underlay)
+	e.KeyDir = *keyDir
 	for i, root := range trees {
 		if i > 0 && !*quiet {
 			fmt.Println()

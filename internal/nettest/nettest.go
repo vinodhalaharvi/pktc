@@ -80,13 +80,19 @@ func (n *NS) MustRun(argv ...string) string {
 
 // RunScript executes a generated script line by line, so a failure
 // names the command that failed rather than the whole script.
+//
+// Each line goes through a shell, because the emitted script is a shell
+// script: quoting and command substitution are part of what is being
+// tested. Splitting on whitespace and exec'ing directly would hand
+// "$(cat key.pub)" to wg as a literal string, which fails in a way that
+// looks like a broken tile rather than a broken harness.
 func (n *NS) RunScript(script string) error {
 	for _, line := range strings.Split(strings.TrimSpace(script), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if out, err := n.Run(strings.Fields(line)...); err != nil {
+		if out, err := n.Run("sh", "-c", line); err != nil {
 			return fmt.Errorf("%s: %v\n%s", line, err, strings.TrimSpace(out))
 		}
 	}
