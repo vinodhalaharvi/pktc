@@ -30,6 +30,7 @@ usage:
   pktc lower [flags] <file>      print the commands that produce it
   pktc mirror [flags] <file>     print both ends of the tunnel
   pktc expect <file>             print what the underlay should carry
+  pktc explain <file>            print which tiles bid and why one won
 
 lower flags:
   -underlay <dev>   physical device the outermost tunnel attaches to (default eth0)
@@ -60,6 +61,8 @@ func main() {
 		err = cmdMirror(os.Args[2:])
 	case "expect":
 		err = cmdExpect(os.Args[2:])
+	case "explain":
+		err = cmdExplain(os.Args[2:])
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return
@@ -277,6 +280,38 @@ func cmdExpect(args []string) error {
 		return err
 	}
 	fmt.Print(exp)
+	return nil
+}
+
+// cmdExplain shows the covering decision rather than its result.
+// Instruction selection is easy to trust when it works and opaque when
+// it does not; this is the view that tells a near-miss from a no-match.
+func cmdExplain(args []string) error {
+	if len(args) != 1 {
+		fmt.Fprint(os.Stderr, usage)
+		os.Exit(2)
+	}
+	trees, err := readTrees(args[0])
+	if err != nil {
+		return err
+	}
+	reg, err := linux.Registry()
+	if err != nil {
+		return err
+	}
+	for i, root := range trees {
+		if i > 0 {
+			fmt.Println()
+		}
+		if len(trees) > 1 {
+			fmt.Printf("=== rule %d of %d ===\n", i+1, len(trees))
+		}
+		sp, err := spine.FromForm(root)
+		if err != nil {
+			return err
+		}
+		fmt.Print(reg.Explain(sp))
+	}
 	return nil
 }
 

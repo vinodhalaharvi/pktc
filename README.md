@@ -1,5 +1,7 @@
 # pktc
 
+[![ci](https://github.com/vinodhalaharvi/pktc/actions/workflows/ci.yml/badge.svg)](https://github.com/vinodhalaharvi/pktc/actions/workflows/ci.yml)
+
 Describe the packet you expect on the wire. pktc works out which kernel
 primitive produces it.
 
@@ -189,7 +191,33 @@ pktc parse <file>            print the encapsulation spine
 pktc lower [flags] <file>    print the commands that produce it
 pktc mirror [flags] <file>   print both ends of the tunnel
 pktc expect <file>           print what the underlay should carry
+pktc explain <file>          print which tiles bid and why one won
 ```
+
+## Why that tile
+
+Instruction selection is easy to trust when it works and opaque when it
+does not, so the decision is inspectable:
+
+```
+$ pktc explain testdata/vlan-vxlan.lisp
+spine:  ethernet · vlan · ipv4 · udp · vxlan · ethernet · ipv4
+
+at layer 0: ethernet · vlan
+  VLAN       ethernet · vlan                chosen — the only tile that matched
+  VXLAN      ipv4 · udp · vxlan · ethernet  layer 0 is ethernet, wants ipv4
+  ...
+
+at layer 2: ipv4 · udp · vxlan · ethernet
+  VXLAN      ipv4 · udp · vxlan · ethernet  chosen — the only tile that matched
+  WireGuard  ipv4 · udp · wireguard · ipv4  layer 4 is vxlan, wants wireguard
+  GRE        ipv4 · gre · ipv4              layer 3 is udp, wants gre
+```
+
+Naming the layer that stopped a tile is the difference between a
+near-miss and a no-match: WireGuard got three layers in, GRE got one.
+Failed positions are reported too, so `no lowering exists` arrives with
+the bids that came closest.
 
 ## Tiles
 
@@ -230,8 +258,7 @@ building it confirmed, changed and deferred.
 A file may hold several rules; they share one namespace of interface
 names, so the second GRE tunnel is `gre2`.
 
-Known gaps: six tiles, one backend, no `explain` yet showing why a tile
-won. VLAN and WireGuard were written where their kernel modules were
+Known gaps: six tiles, one backend. VLAN and WireGuard were written where their kernel modules were
 unavailable, so CI is their first real check rather than a local run.
 
 ## License
