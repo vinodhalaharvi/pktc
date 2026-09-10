@@ -62,3 +62,20 @@ func TestEnterAdvancesDev(t *testing.T) {
 		t.Errorf("Root changed to %q; it must stay the physical device", e.Root)
 	}
 }
+
+// Created is what lets a chained stack bring every device up rather
+// than only the innermost.
+func TestCreatedTracksTheChain(t *testing.T) {
+	e := New("eth0")
+	if len(e.Created) != 0 {
+		t.Fatalf("Created starts as %v, want empty", e.Created)
+	}
+	e.Enter("vxlan100")
+	e.Enter("vxlan200")
+	if len(e.Created) != 2 || e.Created[0] != "vxlan100" || e.Created[1] != "vxlan200" {
+		t.Errorf("Created = %v, want the chain outermost first", e.Created)
+	}
+	if e.Dev != "vxlan200" {
+		t.Errorf("Dev = %q, want the innermost device", e.Dev)
+	}
+}

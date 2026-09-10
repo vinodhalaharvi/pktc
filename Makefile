@@ -1,6 +1,6 @@
 GO ?= go
 
-.PHONY: all build test vet fmt check netns demo mirror-demo clean
+.PHONY: all build test vet fmt check netns demo mirror-demo nested-demo clean
 
 all: check
 
@@ -28,6 +28,10 @@ netns:
 # Both ends of a tunnel, derived from one description.
 mirror-demo:
 	@$(GO) run ./cmd/pktc mirror -peer-inner 10.100.0.2/24 -peer-underlay wan testdata/vxlan.lisp
+
+# A tunnel inside a tunnel: two tiles, one spine, no combined tile.
+nested-demo:
+	@$(GO) run ./cmd/pktc lower testdata/vxlan-nested.lisp
 
 clean:
 	rm -f pktc

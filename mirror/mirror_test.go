@@ -129,3 +129,50 @@ func TestErrors(t *testing.T) {
 		t.Error("a peer address without a prefix length must be rejected")
 	}
 }
+
+// A nested stack has more than one two-ended layer. All of them turn
+// around, not just the outermost.
+func TestNestedLayersAllSwap(t *testing.T) {
+	res, err := Peer(tree(t, `(configure
+		(ipv4 :src "192.168.1.10" :dst "192.168.1.20"
+		  (udp :dst-port 4789
+		    (vxlan :vni 100
+		      (ethernet
+		        (ipv4 :src "10.100.0.1/24" :dst "10.100.0.2"
+		          (udp :dst-port 4789
+		            (vxlan :vni 200
+		              (ethernet
+		                (ipv4 :src "10.200.0.1/24")))))))))) `), "10.200.0.2/24")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer := packet(res.Tree)
+	if got := prop(t, outer, "src"); got != "192.168.1.20" {
+		t.Errorf("outer :src = %q", got)
+	}
+	middle := outer.Children[0].Children[0].Children[0] // ipv4 > udp > vxlan > ethernet
+	middle = middle.Children[0]                         // > ipv4
+	if got := prop(t, middle, "src"); got != "10.100.0.2/24" {
+		t.Errorf("middle :src = %q, want the peer's host part with the length kept", got)
+	}
+	if got := prop(t, middle, "dst"); got != "10.100.0.1" {
+		t.Errorf("middle :dst = %q, want the near end's address without a length", got)
+	}
+}
+
+// The prefix length says how wide the shared subnet is and belongs to
+// whichever field is local. It must not travel with the address.
+func TestPrefixLengthStaysWithTheLocalField(t *testing.T) {
+	res, err := Peer(tree(t, `(configure (ipv4 :src "10.0.0.1/24" :dst "10.0.0.2"
+		(gre (ipv4 :src "172.16.0.1/30"))))`), "172.16.0.2/30")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer := packet(res.Tree)
+	if got := prop(t, outer, "src"); got != "10.0.0.2/24" {
+		t.Errorf("peer :src = %q, want 10.0.0.2/24", got)
+	}
+	if got := prop(t, outer, "dst"); got != "10.0.0.1" {
+		t.Errorf("peer :dst = %q, want a bare address", got)
+	}
+}

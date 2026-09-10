@@ -56,21 +56,21 @@ func lowerVXLAN(sp spine.Spine, e *env.Env) (command.Script, error) {
 	}
 	p, _ := port.Get()
 
-	local, err := ast.Get(outer, ast.Src)
+	local, err := readEndpoint(outer, "src")
 	if err != nil {
 		return nil, err
 	}
-	if local.IsAbsent() {
+	if local.Absent {
 		return nil, sexp.Errorf(outer.Pos,
 			"(%s ...): missing required property :src; give the underlay address, "+
 				"or '*' to let the kernel choose it from the device", outer.Name)
 	}
 
-	remote, err := ast.Get(outer, ast.Dst)
+	remote, err := readEndpoint(outer, "dst")
 	if err != nil {
 		return nil, err
 	}
-	if remote.IsAbsent() {
+	if remote.Absent {
 		return nil, sexp.Errorf(outer.Pos,
 			"(%s ...): missing required property :dst; give the peer address, a multicast "+
 				"group, or '*' when remotes are learned rather than configured", outer.Name)
@@ -89,6 +89,10 @@ func lowerVXLAN(sp spine.Spine, e *env.Env) (command.Script, error) {
 		return nil, sexp.Errorf(tunnel.Pos, "%v", err)
 	}
 
+	// An intermediate layer's prefix belongs on the device below,
+	// before anything is stacked on top of it.
+	out := local.underlayAddress(e.Dev)
+
 	argv := []string{"ip", "link", "add", "name", dev, "type", "vxlan"}
 	why := "Ethernet inside VXLAN is a vxlan device"
 
@@ -103,20 +107,20 @@ func lowerVXLAN(sp spine.Spine, e *env.Env) (command.Script, error) {
 		why += "; :vni '*' means one device for every VNI, driven by route metadata"
 	}
 
-	if l, ok := local.Get(); ok {
-		argv = append(argv, "local", l.String())
+	if !local.Dynamic {
+		argv = append(argv, "local", local.Addr)
 	} else {
 		why += "; :src '*' leaves the source address to the underlay device"
 	}
 
-	if r, ok := remote.Get(); ok {
+	if !remote.Dynamic {
 		// A multicast outer destination is not a peer, it is the group
 		// every peer joins. Same field, different kernel parameter.
-		if r.IsMulticast() {
-			argv = append(argv, "group", r.String())
+		if remote.IsMulticast() {
+			argv = append(argv, "group", remote.Addr)
 			why += "; a multicast outer destination becomes a group rather than a remote"
 		} else {
-			argv = append(argv, "remote", r.String())
+			argv = append(argv, "remote", remote.Addr)
 		}
 	} else {
 		why += "; :dst '*' means peers are learned rather than configured"
@@ -125,5 +129,5 @@ func lowerVXLAN(sp spine.Spine, e *env.Env) (command.Script, error) {
 	argv = append(argv, "dstport", u16(p), "dev", e.Dev)
 
 	e.Enter(dev)
-	return command.Script{command.New(why, argv...)}, nil
+	return append(out, command.New(why, argv...)), nil
 }

@@ -24,6 +24,11 @@ type Env struct {
 	// tunnel inside a tunnel finds its underlay.
 	Dev string
 
+	// Created lists every device made so far, outermost first. A
+	// chained stack has more than one, and all of them need bringing
+	// up, not just the innermost.
+	Created []string
+
 	used  map[string]bool
 	count map[string]int
 }
@@ -65,8 +70,14 @@ func (e *Env) Alloc(prefix string) (string, error) {
 	}
 }
 
-// Enter records that a tile created dev, so the next tile attaches to it.
-func (e *Env) Enter(dev string) { e.Dev = dev }
+// Enter records that a tile created dev, so the next tile attaches to
+// it. This is the whole of the chaining mechanism: an outer tile's
+// device becomes an inner tile's underlay, and nothing else has to know
+// that a stack was nested.
+func (e *Env) Enter(dev string) {
+	e.Created = append(e.Created, dev)
+	e.Dev = dev
+}
 
 func validName(name string) error {
 	if name == "" {

@@ -20,6 +20,7 @@ package mirror
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/vinodhalaharvi/pktc/ast"
 	"github.com/vinodhalaharvi/pktc/sexp"
@@ -60,12 +61,28 @@ func Peer(root *ast.Node, innerAddr string) (Result, error) {
 		return Result{}, fmt.Errorf("nothing to mirror")
 	}
 
-	outer := layers[0]
-	if err := swapEndpoints(outer); err != nil {
-		return Result{}, err
+	// Every layer naming both ends is a two-ended relationship and has
+	// to turn around. A nested stack has more than one: the outer
+	// underlay and the address of each tunnel it stands on.
+	swapped := 0
+	for _, n := range layers {
+		_, hasSrc := n.Lookup("src")
+		_, hasDst := n.Lookup("dst")
+		if !hasSrc || !hasDst {
+			continue
+		}
+		if err := swapEndpoints(n); err != nil {
+			return Result{}, err
+		}
+		swapped++
+		res.Supplied = append(res.Supplied,
+			fmt.Sprintf(":src and :dst exchanged on (%s ...)", n.Name))
 	}
-	res.Supplied = append(res.Supplied,
-		fmt.Sprintf("outer :src and :dst exchanged on (%s ...)", outer.Name))
+	if swapped == 0 {
+		return Result{}, sexp.Errorf(layers[0].Pos,
+			"(%s ...): mirroring needs a layer naming both :src and :dst; a tunnel has two ends",
+			layers[0].Name)
+	}
 
 	// Identical at both ends, so left alone. Naming them is the point:
 	// a reader should be able to see that the mirror knew to leave them.
@@ -96,26 +113,60 @@ func Peer(root *ast.Node, innerAddr string) (Result, error) {
 	return res, nil
 }
 
-// swapEndpoints exchanges :src and :dst, including their states. A tree
-// written as :src X :dst * mirrors to :src * :dst X, which is the
-// correct reading: the end that learned its peers is now the end that
-// is learned.
+// swapEndpoints exchanges the two ends of one layer.
+//
+// The addresses swap; the prefix lengths do not. A layer written as
+// :src "10.100.0.1/24" :dst "10.100.0.2" mirrors to :src "10.100.0.2/24"
+// :dst "10.100.0.1", because the length says how wide the shared subnet
+// is and belongs to whichever field is the local one. This is the one
+// place a peer's inner address can be derived rather than supplied:
+// both host parts are already written down.
+//
+// A '*' swaps as itself, so :src X :dst * becomes :src * :dst X. The end
+// that learned its peers becomes the end that is learned.
 func swapEndpoints(n *ast.Node) error {
-	src, hasSrc := n.Lookup("src")
-	dst, hasDst := n.Lookup("dst")
-	if !hasSrc || !hasDst {
-		return sexp.Errorf(n.Pos,
-			"(%s ...): mirroring needs both :src and :dst; a tunnel has two ends", n.Name)
-	}
+	src, _ := n.Lookup("src")
+	dst, _ := n.Lookup("dst")
+
+	srcAddr, srcLen := splitPrefix(src.Val)
+	dstAddr, dstLen := splitPrefix(dst.Val)
+
+	newSrc := rebuild(dst.Val, dstAddr, srcLen)
+	newDst := rebuild(src.Val, srcAddr, dstLen)
+
 	for i := range n.Props {
 		switch n.Props[i].Key {
 		case "src":
-			n.Props[i].Val = dst.Val
+			n.Props[i].Val = newSrc
 		case "dst":
-			n.Props[i].Val = src.Val
+			n.Props[i].Val = newDst
 		}
 	}
 	return nil
+}
+
+// splitPrefix separates an address from its length, if it has one.
+func splitPrefix(v sexp.Value) (addr, length string) {
+	if v.Kind == sexp.KStar {
+		return "", ""
+	}
+	if i := strings.IndexByte(v.Text, '/'); i >= 0 {
+		return v.Text[:i], v.Text[i+1:]
+	}
+	return v.Text, ""
+}
+
+// rebuild puts an address back together with the length belonging to
+// its new position. A '*' has no address and stays a '*'.
+func rebuild(orig sexp.Value, addr, length string) sexp.Value {
+	if orig.Kind == sexp.KStar || addr == "" {
+		return orig
+	}
+	text := addr
+	if length != "" {
+		text = addr + "/" + length
+	}
+	return sexp.Value{Kind: sexp.KString, Text: text, Pos: orig.Pos}
 }
 
 // innermostAddressed finds the deepest layer carrying an address.

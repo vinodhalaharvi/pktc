@@ -61,8 +61,12 @@ func (r *Registry) Cover(sp spine.Spine, e *env.Env) (Result, error) {
 	}
 	res.Payload = rest
 
-	res.Script = append(res.Script,
-		command.New("bring the tunnel up", "ip", "link", "set", e.Dev, "up"))
+	// Every device in the chain has to come up, outermost first: an
+	// inner tunnel cannot carry traffic over an underlay that is down.
+	for _, dev := range e.Created {
+		res.Script = append(res.Script,
+			command.New("bring "+dev+" up", "ip", "link", "set", dev, "up"))
+	}
 	return res, nil
 }
 
