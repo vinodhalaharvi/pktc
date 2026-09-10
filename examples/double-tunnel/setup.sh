@@ -1,6 +1,14 @@
 #!/bin/sh
-# Two namespaces joined by a veth pair: the smallest arrangement in
-# which a tunnel is a tunnel rather than a device talking to itself.
+#
+# RUN THIS INSIDE THE LIMA VM, WITH SUDO.
+#
+#   sudo sh examples/double-tunnel/setup.sh
+#
+# Builds two network namespaces joined by a veth pair: the smallest
+# arrangement in which a tunnel is a tunnel rather than a device talking
+# to itself. Run once per session; run teardown.sh before repeating,
+# because the devices persist and a second run hits "File exists".
+
 set -e
 ip netns del A 2>/dev/null || true
 ip netns del B 2>/dev/null || true

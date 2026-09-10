@@ -1,8 +1,26 @@
 #!/bin/sh
-# Generate both ends from one description, apply them, and watch the
-# underlay while traffic runs on the innermost network.
+#
+# RUN THIS INSIDE THE LIMA VM, NOT ON THE MAC.
+#
+#   macOS      → limactl shell pktc
+#   in the VM  → cd /Users/<you>/go-projects/pktc
+#                sudo sh examples/double-tunnel/setup.sh
+#                sh examples/double-tunnel/run.sh
+#
+# macOS has no network namespaces, no ip(8) and no VXLAN devices, so
+# none of this works there. Editing and git stay on the Mac: the Lima
+# mount is read-only, so `git pull` inside the VM will fail.
+#
+# Generates both ends of the tunnel from one description, applies them,
+# and captures the underlay while traffic runs on the innermost network.
+
 set -e
-PKTC="go run ./cmd/pktc"
+
+# Work from this script's directory so it runs from anywhere, and find
+# the repo root two levels up.
+cd "$(dirname "$0")"
+REPO=$(cd ../.. && pwd)
+PKTC="go run $REPO/cmd/pktc"
 
 $PKTC lower -quiet -underlay vethA double.lisp > /tmp/A.sh
 $PKTC mirror -peer-inner 10.200.0.2/24 -peer-underlay vethB double.lisp \
