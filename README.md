@@ -52,6 +52,32 @@ are Linux tunnel devices and the emitted code is `iproute2` commands.
 Because the spine is a list rather than a tree, greedy longest-match is
 optimal and the tiler is under fifty lines.
 
+> **Why a spine, and where that stops.** A header has *a* payload
+> field. That is what encapsulation means: one protocol's payload is
+> another protocol's whole packet. So the single-child property is not a
+> simplifying assumption about common cases — it follows from the
+> definition, and there is no encapsulating protocol with two payloads
+> that pktc is declining to handle.
+>
+> Within one encapsulation stack, then, covering is segmentation of a
+> list, and greedy longest-match is optimal. Dynamic programming would
+> be more machinery for identical output.
+>
+> Packets that genuinely branch do exist — SCTP chunks, DNS resource
+> records, 802.11 A-MSDU subframes, IPv6 option chains — but none of
+> them is encapsulation. Their inner parts are siblings, not nested.
+> The distinction is containers-of-many versus one-inside-another.
+>
+> Where this model really stops is **aggregation devices**: bridges,
+> bonds, teams. Those are N-ary, they would need a real tree cover, and
+> the optimality claim would no longer follow. They are also not
+> described by a packet at all, so the inversion this tool is built on —
+> describe the artifact, derive the mechanism — does not reach them.
+> That is the better reason to leave them out than difficulty.
+>
+> `spine.Extract` refuses a node with more than one child and says so,
+> so the assumption is checked rather than assumed.
+
 ```
 ipv4 · udp · vxlan · ethernet · ipv4
 └─────── VXLAN tile ────────┘   └─ address on the device

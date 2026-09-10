@@ -56,6 +56,22 @@ Instruction selection is hard because expression trees **branch**. `add(mul(a,b)
 
 An encapsulation stack does not branch. Each layer has exactly one child. **The tree is a spine.**
 
+This is not a simplifying assumption. A header has *a* payload field, so
+the single-child property follows from what encapsulation is, and no
+encapsulating protocol is being excluded by it. Packets that branch —
+SCTP chunks, DNS resource records, A-MSDU subframes, IPv6 option chains
+— are containers of siblings rather than one-inside-another, and are a
+different shape of problem.
+
+The claim to state precisely is therefore bounded: *within one
+encapsulation stack*, covering is list segmentation and greedy
+longest-match is optimal. It is not a general result about the tool.
+Aggregation devices (bridges, bonds, teams) are N-ary and would need a
+real tree cover, at which point the optimality claim stops holding. They
+are also not described by a packet, so the inversion this design rests
+on does not reach them — which is a better reason to exclude them than
+the algorithm being harder.
+
 So the problem collapses from "optimal tree cover" to "optimal segmentation of a list," which greedy longest-match solves optimally, deterministically, in a single pass. No BURS. No dynamic programming.
 
 ```
