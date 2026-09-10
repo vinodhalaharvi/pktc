@@ -28,3 +28,9 @@ netns:
 clean:
 	rm -f pktc
 	$(GO) clean ./...
+
+demo:
+	@for f in testdata/*.lisp; do \
+	  printf '%-24s ' "$$(basename $$f)"; \
+	  $(GO) run ./cmd/pktc lower -quiet $$f | head -1; \
+	done
