@@ -2,3 +2,13 @@
 /dist/
 *.test
 .DS_Store
+
+# editors
+.idea/
+.vscode/
+*.swp
+
+# go
+/pktc
+*.out
+coverage.txt
