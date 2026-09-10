@@ -16,6 +16,7 @@ import (
 
 	"github.com/vinodhalaharvi/pktc/ast"
 	"github.com/vinodhalaharvi/pktc/env"
+	"github.com/vinodhalaharvi/pktc/mirror"
 	"github.com/vinodhalaharvi/pktc/sexp"
 	"github.com/vinodhalaharvi/pktc/spine"
 	"github.com/vinodhalaharvi/pktc/tiles/linux"
@@ -26,10 +27,17 @@ const usage = `pktc — describe the packet, derive the configuration
 usage:
   pktc parse <file>              print the encapsulation spine
   pktc lower [flags] <file>      print the commands that produce it
+  pktc mirror [flags] <file>     print both ends of the tunnel
 
 lower flags:
   -underlay <dev>   physical device the outermost tunnel attaches to (default eth0)
   -quiet            omit explanatory comments
+
+mirror flags:
+  -underlay <dev>       underlay on the near end (default eth0)
+  -peer-underlay <dev>  underlay on the far end (defaults to -underlay)
+  -peer-inner <cidr>    the far end's inner address; without it the peer
+                        script omits the address and says so
 
 pktc prints configuration; it never applies it.
 `
@@ -45,6 +53,8 @@ func main() {
 		err = cmdParse(os.Args[2:])
 	case "lower":
 		err = cmdLower(os.Args[2:])
+	case "mirror":
+		err = cmdMirror(os.Args[2:])
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return
@@ -58,29 +68,113 @@ func main() {
 	}
 }
 
-// readSpine is the shared front end: read, build, validate, flatten.
-func readSpine(path string) (spine.Spine, error) {
+// readTree is the shared front end: read, build, validate.
+func readTree(path string) (*ast.Node, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
-		return spine.Spine{}, err
+		return nil, err
 	}
 	forms, err := sexp.Read(path, string(src))
 	if err != nil {
-		return spine.Spine{}, err
+		return nil, err
 	}
 	switch len(forms) {
 	case 1:
 	case 0:
-		return spine.Spine{}, fmt.Errorf("%s: no forms found", path)
+		return nil, fmt.Errorf("%s: no forms found", path)
 	default:
-		return spine.Spine{}, sexp.Errorf(forms[1].Pos,
+		return nil, sexp.Errorf(forms[1].Pos,
 			"this version compiles one (configure ...) form per file; found %d", len(forms))
 	}
-	root, err := ast.Build(forms[0])
+	return ast.Build(forms[0])
+}
+
+func readSpine(path string) (spine.Spine, error) {
+	root, err := readTree(path)
 	if err != nil {
 		return spine.Spine{}, err
 	}
 	return spine.FromForm(root)
+}
+
+// render lowers one tree and prints it under a heading.
+func render(heading string, root *ast.Node, underlay string, quiet bool) error {
+	sp, err := spine.FromForm(root)
+	if err != nil {
+		return err
+	}
+	reg, err := linux.Registry()
+	if err != nil {
+		return err
+	}
+	res, err := reg.Cover(sp, env.New(underlay))
+	if err != nil {
+		return err
+	}
+	if quiet {
+		fmt.Println(res.Script.Plain())
+		return nil
+	}
+	fmt.Printf("#!/bin/sh\n")
+	if heading != "" {
+		fmt.Printf("# %s\n", heading)
+	}
+	fmt.Printf("# %s\n# tiles: %s\n\n", sp, strings.Join(res.Applied, " \u2192 "))
+	fmt.Print(res.Script.Shell())
+	if res.Payload.Len() > 0 {
+		fmt.Printf("\n# %s below the tunnel is traffic, not configuration\n", res.Payload)
+	}
+	return nil
+}
+
+func cmdMirror(args []string) error {
+	fs := flag.NewFlagSet("mirror", flag.ExitOnError)
+	underlay := fs.String("underlay", "eth0", "underlay on the near end")
+	peerUnderlay := fs.String("peer-underlay", "", "underlay on the far end")
+	peerInner := fs.String("peer-inner", "", "the far end's inner address")
+	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		os.Exit(2)
+	}
+	if *peerUnderlay == "" {
+		*peerUnderlay = *underlay
+	}
+
+	root, err := readTree(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	if err := render("near end", root, *underlay, false); err != nil {
+		return err
+	}
+
+	res, err := mirror.Peer(root, *peerInner)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println()
+	fmt.Println("# " + strings.Repeat("-", 68))
+	for _, s := range res.Supplied {
+		fmt.Println("# derived: " + s)
+	}
+	for _, m := range res.Missing {
+		fmt.Println("# NOT DERIVED: " + m)
+	}
+	fmt.Println("# " + strings.Repeat("-", 68))
+	fmt.Println()
+
+	if err := render("far end", res.Tree, *peerUnderlay, false); err != nil {
+		return err
+	}
+	if len(res.Missing) > 0 {
+		fmt.Println("\n# the far end is incomplete; supply -peer-inner to finish it")
+	}
+	return nil
 }
 
 func cmdParse(args []string) error {
@@ -118,31 +212,11 @@ func cmdLower(args []string) error {
 		fs.Usage()
 		os.Exit(2)
 	}
-
-	sp, err := readSpine(fs.Arg(0))
+	root, err := readTree(fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	reg, err := linux.Registry()
-	if err != nil {
-		return err
-	}
-	res, err := reg.Cover(sp, env.New(*underlay))
-	if err != nil {
-		return err
-	}
-
-	if *quiet {
-		fmt.Println(res.Script.Plain())
-	} else {
-		fmt.Printf("#!/bin/sh\n# %s\n# tiles: %s\n\n",
-			sp, strings.Join(res.Applied, " → "))
-		fmt.Print(res.Script.Shell())
-		if res.Payload.Len() > 0 {
-			fmt.Printf("\n# %s below the tunnel is traffic, not configuration\n", res.Payload)
-		}
-	}
-	return nil
+	return render("", root, *underlay, *quiet)
 }
 
 func describe(n *ast.Node) string {

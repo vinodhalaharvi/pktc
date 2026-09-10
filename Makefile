@@ -1,6 +1,6 @@
 GO ?= go
 
-.PHONY: all build test vet fmt check netns clean
+.PHONY: all build test vet fmt check netns demo mirror-demo clean
 
 all: check
 
@@ -24,6 +24,10 @@ check: vet test
 # needs root, and skips whatever the kernel cannot provide.
 netns:
 	sudo -E $$(which $(GO)) test -tags netns -v ./...
+
+# Both ends of a tunnel, derived from one description.
+mirror-demo:
+	@$(GO) run ./cmd/pktc mirror -peer-inner 10.100.0.2/24 -peer-underlay wan testdata/vxlan.lisp
 
 clean:
 	rm -f pktc
