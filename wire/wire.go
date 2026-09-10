@@ -60,6 +60,11 @@ func Expect(sp spine.Spine) (Expectation, error) {
 	var e Expectation
 
 	outer := sp.At(0)
+	if outer.Name == "ethernet" {
+		return Expectation{}, fmt.Errorf(
+			"the outermost layer is (ethernet ...); a tagged or bridged interface has no " +
+				"outer header of its own to predict")
+	}
 	if outer.Name != "ipv4" && outer.Name != "ipv6" {
 		return Expectation{}, fmt.Errorf(
 			"the outermost layer is (%s ...); only IP underlays can be predicted", outer.Name)
@@ -108,6 +113,9 @@ func Expect(sp spine.Spine) (Expectation, error) {
 				return Expectation{}, err
 			}
 		}
+	case "vlan":
+		return Expectation{}, fmt.Errorf(
+			"(vlan ...): a tagged interface is predicted on its parent, not on itself")
 	case "gre":
 		e.Filter = "proto gre"
 		e.Facts = append(e.Facts, Fact{"encapsulation", "GRE", "GREv0"})
@@ -140,6 +148,10 @@ func tunnelFacts(e *Expectation, n *ast.Node) error {
 		}
 	case "geneve":
 		e.Facts = append(e.Facts, Fact{"encapsulation", "Geneve", "Geneve"})
+	case "wireguard":
+		// The payload is encrypted, so the only thing predictable on
+		// the underlay is that UDP flows between the two endpoints.
+		e.Facts = append(e.Facts, Fact{"encapsulation", "WireGuard (opaque UDP)", "UDP"})
 	}
 	return nil
 }

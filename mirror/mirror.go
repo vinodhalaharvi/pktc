@@ -95,6 +95,26 @@ func Peer(root *ast.Node, innerAddr string) (Result, error) {
 		}
 	}
 
+	// Some things a mirror cannot reach. A WireGuard peer holds its own
+	// private key and needs the other side's public key, so the far
+	// end's configuration is not a reading of the near end's tree at
+	// all. This is the first asymmetry that is structural rather than
+	// an address, and saying so is more useful than emitting a script
+	// that looks complete and is not.
+	for _, n := range layers {
+		if n.Name != "wireguard" {
+			continue
+		}
+		res.Missing = append(res.Missing, fmt.Sprintf(
+			"key material on (%s ...): each end holds its own private key and needs the "+
+				"other's public key, which no reading of this tree can supply", n.Name))
+		if p, ok := n.Lookup("peer"); ok {
+			res.Missing = append(res.Missing, fmt.Sprintf(
+				":peer %q names this end's view of the far end; the far end needs a name "+
+					"for this one", p.Val.Text))
+		}
+	}
+
 	inner := innermostAddressed(layers)
 	switch {
 	case inner == nil:

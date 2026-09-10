@@ -163,3 +163,70 @@ func TestVXLANDynamicModes(t *testing.T) {
 		t.Errorf("external (collect-metadata) mode not applied:\n%s", out)
 	}
 }
+
+// VLAN and WireGuard were written where their kernel modules were
+// unavailable, so these are their first real check. A skip here means
+// the module is missing, not that the tile is right.
+func TestNewTilesAgainstKernel(t *testing.T) {
+	tests := []struct {
+		name   string
+		kind   string
+		src    string
+		dev    string
+		expect []string
+	}{
+		{
+			name:   "vlan",
+			kind:   "vlan",
+			src:    `(configure (ethernet (vlan :id 100 (ipv4 :src "10.0.0.1/24"))))`,
+			dev:    "veth0.100",
+			expect: []string{"id 100"},
+		},
+		{
+			name: "wireguard",
+			kind: "wireguard",
+			src: `(configure (ipv4 :src "192.168.1.10" :dst "192.168.1.20"
+				(udp :src-port 51820 :dst-port 51820 (wireguard :peer "peer-b" (ipv4 :src "10.44.0.1/24")))))`,
+			dev:    "wg1",
+			expect: []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ns := nettest.New(t, tt.name, "192.168.1.10")
+			ns.RequireType(tt.kind)
+
+			s := strings.ReplaceAll(script(t, tt.src), "dev eth0", "dev veth0")
+			s = strings.ReplaceAll(s, "link eth0 name eth0.", "link veth0 name veth0.")
+			if tt.name == "wireguard" {
+				// Key material is machine state; make some so the
+				// generated script has something real to read.
+				ns.MustRun("sh", "-c",
+					"mkdir -p /etc/wireguard && "+
+						"(wg genkey > /etc/wireguard/wg1.key 2>/dev/null || echo skip) && "+
+						"(wg genkey | wg pubkey > /etc/wireguard/peer-b.pub 2>/dev/null || echo skip)")
+				if _, err := ns.Run("sh", "-c", "test -s /etc/wireguard/wg1.key"); err != nil {
+					t.Skip("wireguard tools are not installed")
+				}
+			}
+			if err := ns.RunScript(s); err != nil {
+				t.Fatalf("generated script failed against the kernel:\n%v", err)
+			}
+			if len(tt.expect) == 0 {
+				if out, err := ns.Show(tt.dev); err != nil {
+					t.Fatalf("device %s was not created: %v\n%s", tt.dev, err, out)
+				}
+				return
+			}
+			attrs, err := ns.Attrs(tt.dev, tt.kind)
+			if err != nil {
+				t.Fatalf("device %s was not created as expected: %v", tt.dev, err)
+			}
+			for _, want := range tt.expect {
+				if !strings.Contains(attrs, want) {
+					t.Errorf("device is missing %q\n  %s", want, attrs)
+				}
+			}
+		})
+	}
+}

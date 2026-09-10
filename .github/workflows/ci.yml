@@ -31,10 +31,10 @@ jobs:
       # is the only place they can be checked: a golden test proves we
       # emitted what we meant, not that the kernel accepts it.
       - name: capture tooling
-        run: sudo apt-get install -y tcpdump
+        run: sudo apt-get install -y tcpdump wireguard-tools
 
       - name: load tunnel modules
-        run: sudo modprobe ip_gre ipip vxlan
+        run: sudo modprobe ip_gre ipip vxlan 8021q wireguard || true
 
       - name: kernel tests
         run: sudo -E $(which go) test -tags netns -v ./...

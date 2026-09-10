@@ -19,7 +19,7 @@ const Target = "linux-iproute2"
 
 // Registry returns the iproute2 tile set.
 func Registry() (*tile.Registry, error) {
-	return tile.NewRegistry(Target, IPIP, GRE, GRETAP, VXLAN)
+	return tile.NewRegistry(Target, IPIP, GRE, GRETAP, VXLAN, VLAN, WireGuard)
 }
 
 // endpoints reads the outer local and remote addresses.

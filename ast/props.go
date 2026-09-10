@@ -26,6 +26,9 @@ var (
 	Sequence = PropDef[uint32]{"sequence", parseU32}
 	SPI      = PropDef[uint32]{"spi", parseU32}
 
+	VLANID = PropDef[uint16]{"id", parseVLANID}
+	Peer   = PropDef[string]{"peer", ParseText}
+
 	Protocol = PropDef[string]{"protocol", ParseText}
 	Mode     = PropDef[string]{"mode", ParseText}
 	Name     = PropDef[string]{"name", ParseText}
@@ -91,6 +94,18 @@ func parseUnsigned[T unsigned](v sexp.Value, bits int) (T, error) {
 
 func parseU16(v sexp.Value) (uint16, error) { return parseUnsigned[uint16](v, 16) }
 func parseU32(v sexp.Value) (uint32, error) { return parseUnsigned[uint32](v, 32) }
+
+// parseVLANID enforces the 12-bit tag range. 0 and 4095 are reserved.
+func parseVLANID(v sexp.Value) (uint16, error) {
+	n, err := parseUnsigned[uint16](v, 16)
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 || n > 4094 {
+		return 0, fmt.Errorf("%d is outside the usable VLAN range (1..4094)", n)
+	}
+	return n, nil
+}
 
 func parseVNI(v sexp.Value) (uint32, error) {
 	n, err := parseUnsigned[uint32](v, 32)

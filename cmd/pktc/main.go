@@ -72,8 +72,9 @@ func main() {
 	}
 }
 
-// readTree is the shared front end: read, build, validate.
-func readTree(path string) (*ast.Node, error) {
+// readTrees is the shared front end: read, build, validate. A file may
+// hold several rules, because a machine rarely has exactly one tunnel.
+func readTrees(path string) ([]*ast.Node, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -82,15 +83,32 @@ func readTree(path string) (*ast.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch len(forms) {
-	case 1:
-	case 0:
+	if len(forms) == 0 {
 		return nil, fmt.Errorf("%s: no forms found", path)
-	default:
-		return nil, sexp.Errorf(forms[1].Pos,
-			"this version compiles one (configure ...) form per file; found %d", len(forms))
 	}
-	return ast.Build(forms[0])
+	out := make([]*ast.Node, 0, len(forms))
+	for _, f := range forms {
+		n, err := ast.Build(f)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+// readTree is for commands that operate on a single rule.
+func readTree(path string) (*ast.Node, error) {
+	trees, err := readTrees(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(trees) != 1 {
+		return nil, sexp.Errorf(trees[1].Pos,
+			"this command takes one (configure ...) form; %s holds %d. Use 'lower' for a whole file",
+			path, len(trees))
+	}
+	return trees[0], nil
 }
 
 func readSpine(path string) (spine.Spine, error) {
@@ -101,8 +119,9 @@ func readSpine(path string) (spine.Spine, error) {
 	return spine.FromForm(root)
 }
 
-// render lowers one tree and prints it under a heading.
-func render(heading string, root *ast.Node, underlay string, quiet bool) error {
+// render lowers one tree against a shared Env and prints it.
+func render(heading string, root *ast.Node, e *env.Env, quiet bool) error {
+	e.Reset()
 	sp, err := spine.FromForm(root)
 	if err != nil {
 		return err
@@ -111,7 +130,7 @@ func render(heading string, root *ast.Node, underlay string, quiet bool) error {
 	if err != nil {
 		return err
 	}
-	res, err := reg.Cover(sp, env.New(underlay))
+	res, err := reg.Cover(sp, e)
 	if err != nil {
 		return err
 	}
@@ -152,7 +171,7 @@ func cmdMirror(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := render("near end", root, *underlay, false); err != nil {
+	if err := render("near end", root, env.New(*underlay), false); err != nil {
 		return err
 	}
 
@@ -172,7 +191,7 @@ func cmdMirror(args []string) error {
 	fmt.Println("# " + strings.Repeat("-", 68))
 	fmt.Println()
 
-	if err := render("far end", res.Tree, *peerUnderlay, false); err != nil {
+	if err := render("far end", res.Tree, env.New(*peerUnderlay), false); err != nil {
 		return err
 	}
 	if len(res.Missing) > 0 {
@@ -216,11 +235,26 @@ func cmdLower(args []string) error {
 		fs.Usage()
 		os.Exit(2)
 	}
-	root, err := readTree(fs.Arg(0))
+	trees, err := readTrees(fs.Arg(0))
 	if err != nil {
 		return err
 	}
-	return render("", root, *underlay, *quiet)
+	// One Env for the whole file: the rules are configured on one
+	// machine, so a device name claimed by one is unavailable to the next.
+	e := env.New(*underlay)
+	for i, root := range trees {
+		if i > 0 && !*quiet {
+			fmt.Println()
+		}
+		heading := ""
+		if len(trees) > 1 {
+			heading = fmt.Sprintf("rule %d of %d", i+1, len(trees))
+		}
+		if err := render(heading, root, e, *quiet); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // cmdExpect reads the same tree a third way: not as commands, and not

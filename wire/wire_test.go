@@ -115,7 +115,26 @@ func TestUnpredictable(t *testing.T) {
 	forms, _ := sexp.Read("t.lisp", `(configure (ethernet (ipv4 :src "10.0.0.1/24")))`)
 	root, _ := ast.Build(forms[0])
 	sp, _ := spine.FromForm(root)
-	if _, err := Expect(sp); err == nil || !strings.Contains(err.Error(), "only IP underlays") {
-		t.Errorf("a non-IP outer layer should be refused, got %v", err)
+	if _, err := Expect(sp); err == nil || !strings.Contains(err.Error(), "no outer header of its own") {
+		t.Errorf("an Ethernet outer layer should be refused, got %v", err)
+	}
+}
+
+// The underlay of a WireGuard tunnel is opaque by design: the only
+// prediction possible is that UDP flows between the endpoints.
+func TestWireGuardPredictsOnlyTheEnvelope(t *testing.T) {
+	e := expect(t, `(configure (ipv4 :src "198.51.100.10" :dst "198.51.100.20"
+		(udp :src-port 51820 :dst-port 51820 (wireguard :peer "b" (ipv4 :src "10.44.0.1/24")))))`)
+	if e.Filter != "udp port 51820" {
+		t.Errorf("filter = %q", e.Filter)
+	}
+	f, ok := has(e, "encapsulation")
+	if !ok || !strings.Contains(f.Value, "WireGuard") {
+		t.Errorf("encapsulation = %v", f)
+	}
+	for _, bad := range []string{"VXLAN VNI", "inner"} {
+		if _, ok := has(e, bad); ok {
+			t.Errorf("nothing inside an encrypted tunnel is predictable, but %q was", bad)
+		}
 	}
 }

@@ -199,11 +199,27 @@ pktc expect <file>           print what the underlay should carry
 | `ipv4 · gre · ipv4` | `gre` |
 | `ipv4 · gre · ethernet` | `gretap` |
 | `ipv4 · udp · vxlan · ethernet` | `vxlan` |
+| `ethernet · vlan` | `vlan` |
+| `ipv4 · udp · wireguard · ipv4` | `wireguard` |
 
-Geneve, VLAN, XFRM and WireGuard are absent for one reason: their kernel
-modules were not available where the existing tiles were written, and
-shipping syntax that has never been run is how a compiler acquires quiet
-bugs.
+Geneve and XFRM are still absent.
+
+WireGuard is the one asymmetric tile. Key material is machine state and
+must never appear in a tree, so the tree names a peer and the name
+resolves to a file. It is also the only tile whose peer may be
+unaddressable: `:dst *` means a peer behind NAT that announces itself on
+first handshake.
+
+```
+$ pktc mirror -peer-inner 10.44.0.2/24 testdata/wireguard.lisp
+# derived: :src and :dst exchanged on (ipv4 ...)
+# NOT DERIVED: key material on (wireguard ...): each end holds its own
+#              private key and needs the other's public key, which no
+#              reading of this tree can supply
+```
+
+That is the first asymmetry that is structural rather than an address,
+and reporting it beats emitting a script that looks complete.
 
 ## Status
 
@@ -211,8 +227,12 @@ Early, and honest about it. The design is written up in
 [docs/DESIGN.md](docs/DESIGN.md), including an appendix recording what
 building it confirmed, changed and deferred.
 
-Known gaps: one `configure` form per file, four tiles, one backend, no
-`explain` yet showing why a tile won.
+A file may hold several rules; they share one namespace of interface
+names, so the second GRE tunnel is `gre2`.
+
+Known gaps: six tiles, one backend, no `explain` yet showing why a tile
+won. VLAN and WireGuard were written where their kernel modules were
+unavailable, so CI is their first real check rather than a local run.
 
 ## License
 

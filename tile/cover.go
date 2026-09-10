@@ -24,6 +24,7 @@ type Result struct {
 // layer carrying an address becomes an address on the innermost device.
 func (r *Registry) Cover(sp spine.Spine, e *env.Env) (Result, error) {
 	var res Result
+	created := len(e.Created) // rules before this one are already up
 	i := 0
 	for i < sp.Len() {
 		cands := r.matchAt(sp, i)
@@ -63,7 +64,7 @@ func (r *Registry) Cover(sp spine.Spine, e *env.Env) (Result, error) {
 
 	// Every device in the chain has to come up, outermost first: an
 	// inner tunnel cannot carry traffic over an underlay that is down.
-	for _, dev := range e.Created {
+	for _, dev := range e.Created[created:] {
 		res.Script = append(res.Script,
 			command.New("bring "+dev+" up", "ip", "link", "set", dev, "up"))
 	}

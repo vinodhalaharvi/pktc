@@ -176,3 +176,34 @@ func TestPrefixLengthStaysWithTheLocalField(t *testing.T) {
 		t.Errorf("peer :dst = %q, want a bare address", got)
 	}
 }
+
+// The first asymmetry that is structural rather than an address. No
+// reading of one end's tree produces the other end's key material, and
+// saying so beats emitting a script that looks complete.
+func TestWireGuardKeysAreNotDerivable(t *testing.T) {
+	res, err := Peer(tree(t, `(configure (ipv4 :src "198.51.100.10" :dst "198.51.100.20"
+		(udp :src-port 51820 :dst-port 51820 (wireguard :peer "peer-b" (ipv4 :src "10.44.0.1/24")))))`),
+		"10.44.0.2/24")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys, peer bool
+	for _, m := range res.Missing {
+		if strings.Contains(m, "private key") {
+			keys = true
+		}
+		if strings.Contains(m, "peer-b") {
+			peer = true
+		}
+	}
+	if !keys {
+		t.Errorf("the mirror must report key material as underivable, got %v", res.Missing)
+	}
+	if !peer {
+		t.Errorf("the mirror must note that the peer name does not turn around, got %v", res.Missing)
+	}
+	// The parts it can do, it still does.
+	if got := prop(t, packet(res.Tree), "src"); got != "198.51.100.20" {
+		t.Errorf("endpoints should still swap, got :src = %q", got)
+	}
+}

@@ -70,6 +70,11 @@ func (e *Env) Alloc(prefix string) (string, error) {
 	}
 }
 
+// Reset returns to the physical device, keeping every name already
+// taken. Rules in one file are configured on one machine, so they share
+// a namespace of interface names but each starts from the underlay.
+func (e *Env) Reset() { e.Dev = e.Root }
+
 // Enter records that a tile created dev, so the next tile attaches to
 // it. This is the whole of the chaining mechanism: an outer tile's
 // device becomes an inner tile's underlay, and nothing else has to know

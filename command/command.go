@@ -79,5 +79,11 @@ func quote(s string) string {
 	if safe(s) {
 		return s
 	}
+	// A command substitution has to reach the shell intact. Double
+	// quotes keep it a single word without disabling it; single quotes
+	// would turn a key lookup into a literal string.
+	if strings.Contains(s, "$(") && !strings.Contains(s, `"`) {
+		return `"` + s + `"`
+	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
