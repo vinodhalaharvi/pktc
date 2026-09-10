@@ -1,6 +1,6 @@
 GO ?= go
 
-.PHONY: all build test vet fmt check netns demo mirror-demo nested-demo clean
+.PHONY: all build test vet fmt check netns demo mirror-demo nested-demo expect-demo clean
 
 all: check
 
@@ -32,6 +32,10 @@ mirror-demo:
 # A tunnel inside a tunnel: two tiles, one spine, no combined tile.
 nested-demo:
 	@$(GO) run ./cmd/pktc lower testdata/vxlan-nested.lisp
+
+# The third reading of one tree: what the underlay should carry.
+expect-demo:
+	@$(GO) run ./cmd/pktc expect testdata/vxlan.lisp
 
 clean:
 	rm -f pktc

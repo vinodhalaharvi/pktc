@@ -30,6 +30,9 @@ jobs:
       # The generated commands are run against a real kernel here. This
       # is the only place they can be checked: a golden test proves we
       # emitted what we meant, not that the kernel accepts it.
+      - name: capture tooling
+        run: sudo apt-get install -y tcpdump
+
       - name: load tunnel modules
         run: sudo modprobe ip_gre ipip vxlan
 

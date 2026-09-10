@@ -20,6 +20,7 @@ import (
 	"github.com/vinodhalaharvi/pktc/sexp"
 	"github.com/vinodhalaharvi/pktc/spine"
 	"github.com/vinodhalaharvi/pktc/tiles/linux"
+	"github.com/vinodhalaharvi/pktc/wire"
 )
 
 const usage = `pktc — describe the packet, derive the configuration
@@ -28,6 +29,7 @@ usage:
   pktc parse <file>              print the encapsulation spine
   pktc lower [flags] <file>      print the commands that produce it
   pktc mirror [flags] <file>     print both ends of the tunnel
+  pktc expect <file>             print what the underlay should carry
 
 lower flags:
   -underlay <dev>   physical device the outermost tunnel attaches to (default eth0)
@@ -55,6 +57,8 @@ func main() {
 		err = cmdLower(os.Args[2:])
 	case "mirror":
 		err = cmdMirror(os.Args[2:])
+	case "expect":
+		err = cmdExpect(os.Args[2:])
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return
@@ -217,6 +221,26 @@ func cmdLower(args []string) error {
 		return err
 	}
 	return render("", root, *underlay, *quiet)
+}
+
+// cmdExpect reads the same tree a third way: not as commands, and not
+// turned around, but as a prediction of the wire. Capture the underlay
+// once the configuration is running and the two should agree.
+func cmdExpect(args []string) error {
+	if len(args) != 1 {
+		fmt.Fprint(os.Stderr, usage)
+		os.Exit(2)
+	}
+	sp, err := readSpine(args[0])
+	if err != nil {
+		return err
+	}
+	exp, err := wire.Expect(sp)
+	if err != nil {
+		return err
+	}
+	fmt.Print(exp)
+	return nil
 }
 
 func describe(n *ast.Node) string {
